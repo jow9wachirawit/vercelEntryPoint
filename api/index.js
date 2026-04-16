@@ -1,41 +1,46 @@
-export const config = {
-  runtime: "edge",
-};
-
-export default async function handler(request) {
+export default async function handler(req, res) {
   const EC2_BASE = "http://44.214.49.8";
-
-  const url = new URL(request.url);
-  const targetUrl = `${EC2_BASE}${url.pathname}${url.search}`;
-
-  const headers = new Headers(request.headers);
-  headers.delete("host");
-
-  const fetchOptions = {
-    method: request.method,
-    headers,
-  };
-
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    fetchOptions.body = request.body;
-    fetchOptions.duplex = "half";
-  }
+  const targetUrl = `${EC2_BASE}${req.url}`;
 
   try {
+    const headers = { ...req.headers };
+    delete headers.host;
+    delete headers["content-length"];
+
+    const fetchOptions = {
+      method: req.method,
+      headers,
+    };
+
+    if (req.method !== "GET" && req.method !== "HEAD" && req.body) {
+      fetchOptions.body =
+        typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    }
+
     const response = await fetch(targetUrl, fetchOptions);
 
-    const responseHeaders = new Headers(response.headers);
-    responseHeaders.delete("transfer-encoding");
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: responseHeaders,
+    response.headers.forEach((value, key) => {
+      if (key.toLowerCase() !== "transfer-encoding") {
+        res.setHeader(key, value);
+      }
     });
+
+    res.status(response.status);
+
+    const contentType = response.headers.get("content-type") || "";
+    if (
+      contentType.includes("text") ||
+      contentType.includes("json") ||
+      contentType.includes("xml") ||
+      contentType.includes("javascript")
+    ) {
+      const text = await response.text();
+      res.send(text);
+    } else {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      res.send(buffer);
+    }
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: "Bad Gateway", message: error.message }),
-      { status: 502, headers: { "content-type": "application/json" } }
-    );
+    res.status(502).json({ error: "Bad Gateway", message: error.message });
   }
 }
