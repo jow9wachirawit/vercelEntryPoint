@@ -6,6 +6,8 @@ export default async function handler(req, res) {
     const headers = { ...req.headers };
     delete headers.host;
     delete headers["content-length"];
+    // Request uncompressed response from EC2
+    delete headers["accept-encoding"];
 
     const fetchOptions = {
       method: req.method,
@@ -19,8 +21,14 @@ export default async function handler(req, res) {
 
     const response = await fetch(targetUrl, fetchOptions);
 
+    // Forward response headers, but skip encoding-related ones
     response.headers.forEach((value, key) => {
-      if (key.toLowerCase() !== "transfer-encoding") {
+      const lower = key.toLowerCase();
+      if (
+        lower !== "transfer-encoding" &&
+        lower !== "content-encoding" &&
+        lower !== "content-length"
+      ) {
         res.setHeader(key, value);
       }
     });
